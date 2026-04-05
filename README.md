@@ -2,6 +2,8 @@
 
 A robust, resilient audio recording and transcription application built with Next.js, integrating Hono for building highly-scalable APIs, and powered by the cutting-edge OpenAI Whisper API.
 
+Deploy Link : https://recording-pipeline-gtem.vercel.app/
+
 ## 🌟 Tech Stack & Architecture
 
 - **Next.js (App Router)**: Powers the frontend UI and provides the edge-ready `api/` routing structure.
