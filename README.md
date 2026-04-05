@@ -4,6 +4,15 @@ A robust, resilient audio recording and transcription application built with Nex
 
 Deploy Link : https://recording-pipeline-gtem.vercel.app/
 
+## ⚠️ Important Note on File Storage
+
+> **Note:** This application currently uses **local file storage** to temporarily store uploaded audio chunks.
+
+- ✅ In **local development**, this works perfectly because the server has full access to the filesystem.
+- ❌ In **Vercel (serverless environment)**, local file storage does **NOT work** because:
+  - The filesystem is **read-only**
+  - Uploaded files are **not persisted**
+
 ## 🌟 Tech Stack & Architecture
 
 - **Next.js (App Router)**: Powers the frontend UI and provides the edge-ready `api/` routing structure.
