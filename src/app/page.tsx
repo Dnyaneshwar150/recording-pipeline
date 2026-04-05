@@ -7,7 +7,7 @@ import { ChunkList } from "@/components/chunk-list";
 import { PipelineInfo } from "@/components/pipeline-info";
 
 export default function Home() {
-  const { session, analyserData, startRecording, stopRecording, retryChunk } =
+  const { session, analyserData, fullRecordingUrl, startRecording, stopRecording, retryChunk } =
     useRecorder();
 
   return (
@@ -73,6 +73,21 @@ export default function Home() {
           onStop={stopRecording}
           sessionId={session.sessionId}
         />
+
+        {/* Full Recording Download / Playback */}
+        {fullRecordingUrl && session.status === "completed" && (
+          <div className="w-full bg-white rounded-xl border border-[#E5E7EB] p-6 flex flex-col items-center gap-4">
+            <h3 className="text-sm font-semibold text-[#0F0F0F]">Full Recording Session</h3>
+            <audio controls src={fullRecordingUrl} className="w-full" />
+            <a 
+              href={fullRecordingUrl} 
+              download={`session_${session.sessionId}.webm`}
+              className="text-xs bg-[#111827] text-white px-4 py-2 rounded-lg hover:bg-black transition-colors"
+            >
+              Download Full Recording
+            </a>
+          </div>
+        )}
 
         {/* Chunk list */}
         <ChunkList

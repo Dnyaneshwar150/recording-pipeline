@@ -19,17 +19,21 @@ export function useRecorder() {
     chunks: [],
   });
   const [analyserData, setAnalyserData] = useState<number[]>([]);
+  const [fullRecordingUrl, setFullRecordingUrl] = useState<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const fullRecorderRef = useRef<MediaRecorder | null>(null);
+  const fullChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number>(0);
   const chunkIndexRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval>>();
+  const chunkTimerRef = useRef<ReturnType<typeof setInterval>>();
   const sessionIdRef = useRef("");
 
   /* ── Analyser visualisation loop ── */
-  const updateAnalyser = useCallback(() => {
+  const updateAnalyser = useCallback((time?: number) => {
     if (!analyserRef.current) return;
     const data = new Uint8Array(analyserRef.current.frequencyBinCount);
     analyserRef.current.getByteFrequencyData(data);
@@ -183,6 +187,8 @@ export function useRecorder() {
         duration: 0,
         chunks: [],
       });
+      setFullRecordingUrl(null);
+      fullChunksRef.current = [];
 
       /* Register session in backend */
       await fetch("/api/session", {
@@ -190,6 +196,20 @@ export function useRecorder() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId: newSessionId }),
       });
+
+      /* Start full recorder */
+      const fullRecorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
+      fullRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          fullChunksRef.current.push(e.data);
+        }
+      };
+      fullRecorder.onstop = () => {
+        const fullBlob = new Blob(fullChunksRef.current, { type: "audio/webm;codecs=opus" });
+        setFullRecordingUrl(URL.createObjectURL(fullBlob));
+      };
+      fullRecorder.start();
+      fullRecorderRef.current = fullRecorder;
 
       /* Duration timer */
       timerRef.current = setInterval(() => {
@@ -199,36 +219,48 @@ export function useRecorder() {
       /* Start analyser loop */
       updateAnalyser();
 
-      /* MediaRecorder with timeslice for auto chunks */
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: "audio/webm;codecs=opus",
-      });
-      mediaRecorderRef.current = mediaRecorder;
+      /* Chunk Recorder logic */
+      const startChunkRecorder = () => {
+        if (!streamRef.current) return null;
+        const mediaRecorder = new MediaRecorder(streamRef.current, {
+          mimeType: "audio/webm;codecs=opus",
+        });
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          const idx = chunkIndexRef.current++;
-          const newChunk: ChunkInfo = {
-            chunkIndex: idx,
-            status: "recording",
-            progress: 0,
-            transcription: "",
-            retries: 0,
-            size: e.data.size,
-            timestamp: Date.now(),
-          };
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            const idx = chunkIndexRef.current++;
+            const newChunk: ChunkInfo = {
+              chunkIndex: idx,
+              status: "recording",
+              progress: 0,
+              transcription: "",
+              retries: 0,
+              size: e.data.size,
+              timestamp: Date.now(),
+            };
 
-          setSession((prev) => ({
-            ...prev,
-            chunks: [...prev.chunks, newChunk],
-          }));
+            setSession((prev) => ({
+              ...prev,
+              chunks: [...prev.chunks, newChunk],
+            }));
 
-          /* Fire-and-forget processing */
-          processChunk(newSessionId, idx, e.data);
-        }
+            /* Fire-and-forget processing */
+            processChunk(newSessionId, idx, e.data);
+          }
+        };
+
+        mediaRecorder.start();
+        return mediaRecorder;
       };
 
-      mediaRecorder.start(CHUNK_INTERVAL_MS);
+      mediaRecorderRef.current = startChunkRecorder();
+
+      chunkTimerRef.current = setInterval(() => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+          mediaRecorderRef.current.stop();
+          mediaRecorderRef.current = startChunkRecorder();
+        }
+      }, CHUNK_INTERVAL_MS);
     } catch (err) {
       console.error("Failed to start recording:", err);
     }
@@ -239,6 +271,9 @@ export function useRecorder() {
     if (mediaRecorderRef.current?.state === "recording") {
       mediaRecorderRef.current.stop();
     }
+    if (fullRecorderRef.current?.state === "recording") {
+      fullRecorderRef.current.stop();
+    }
 
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
@@ -247,6 +282,7 @@ export function useRecorder() {
     setAnalyserData([]);
 
     if (timerRef.current) clearInterval(timerRef.current);
+    if (chunkTimerRef.current) clearInterval(chunkTimerRef.current);
 
     /* Mark session completed */
     if (sessionIdRef.current) {
@@ -263,6 +299,7 @@ export function useRecorder() {
     return () => {
       cancelAnimationFrame(animFrameRef.current);
       if (timerRef.current) clearInterval(timerRef.current);
+      if (chunkTimerRef.current) clearInterval(chunkTimerRef.current);
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
@@ -270,6 +307,7 @@ export function useRecorder() {
   return {
     session,
     analyserData,
+    fullRecordingUrl,
     startRecording,
     stopRecording,
     retryChunk,

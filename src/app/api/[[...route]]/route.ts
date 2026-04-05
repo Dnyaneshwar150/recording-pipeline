@@ -3,7 +3,13 @@ import { handle } from "hono/vercel";
 import { connectDB } from "@/lib/db";
 import { Session, Chunk } from "@/lib/models";
 import { writeFile, mkdir } from "fs/promises";
+import fs from "fs";
 import path from "path";
+import OpenAI from "openai";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 const app = new Hono().basePath("/api");
 
@@ -94,7 +100,7 @@ app.post("/chunk/ack", async (c) => {
   return c.json({ success: true, chunk });
 });
 
-/* ─── Chunk: Transcribe (simulated Whisper) ─── */
+/* ─── Chunk: Transcribe ─── */
 app.post("/chunk/transcribe", async (c) => {
   await connectDB();
   const { sessionId, chunkIndex } = await c.req.json();
@@ -104,35 +110,25 @@ app.post("/chunk/transcribe", async (c) => {
     return c.json({ success: false, error: "Chunk not found" }, 404);
   }
 
-  /* 
-   * In production, call OpenAI Whisper API here:
-   * const transcription = await openai.audio.transcriptions.create({
-   *   file: fs.createReadStream(chunk.filePath),
-   *   model: "whisper-1",
-   * });
-   * 
-   * For demo purposes, we simulate transcription:
-   */
-  const sampleTexts = [
-    "This is a transcription of the recorded audio segment. The speaker discusses the importance of reliable audio processing pipelines.",
-    "The recording continues with detailed analysis of chunked upload patterns and their benefits for data integrity.",
-    "Additional context is provided about error recovery mechanisms and how OPFS enables offline-first architectures.",
-    "The speaker emphasizes the value of acknowledgment-based systems for ensuring no data loss in distributed uploads.",
-    "Final segment covers the integration of speech-to-text services with chunked audio processing workflows.",
-  ];
+  try {
+    const transcriptionResponse = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(chunk.filePath),
+      model: "whisper-1",
+    });
 
-  const transcription = sampleTexts[chunkIndex % sampleTexts.length];
+    const transcription = transcriptionResponse.text;
 
-  /* Simulate ~1s processing delay */
-  await new Promise((resolve) => setTimeout(resolve, 800 + Math.random() * 400));
+    const updated = await Chunk.findOneAndUpdate(
+      { sessionId, chunkIndex },
+      { status: "transcribed", transcription },
+      { new: true }
+    );
 
-  const updated = await Chunk.findOneAndUpdate(
-    { sessionId, chunkIndex },
-    { status: "transcribed", transcription },
-    { new: true }
-  );
-
-  return c.json({ success: true, chunk: updated });
+    return c.json({ success: true, chunk: updated });
+  } catch (err) {
+    console.error("Transcription error:", err);
+    return c.json({ success: false, error: err instanceof Error ? err.message : "Transcription failed" }, 500);
+  }
 });
 
 /* ─── Session: Get all chunks ─── */
