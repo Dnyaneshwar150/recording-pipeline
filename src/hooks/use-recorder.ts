@@ -28,8 +28,8 @@ export function useRecorder() {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number>(0);
   const chunkIndexRef = useRef(0);
-  const timerRef = useRef<ReturnType<typeof setInterval>>();
-  const chunkTimerRef = useRef<ReturnType<typeof setInterval>>();
+  const timerRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const chunkTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const sessionIdRef = useRef("");
 
   /* ── Analyser visualisation loop ── */
